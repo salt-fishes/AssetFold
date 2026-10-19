@@ -15,16 +15,25 @@ export const SUPPORTED_CURRENCIES = [
 export const SECTION_META = Object.freeze({
   confirmed: {
     label: "确定资产",
+    // 面向新手的白话说明，避免只出现「累加 / 去重」这类自造术语。
+    description: "把你现在持有的钱记在这里，例如银行卡余额、基金市值、手里的现金。",
+    emptyHint: "例如招商银行、支付宝、基金账户。",
     directions: [
-      { value: "add", label: "累加" },
-      { value: "deduct", label: "去重" },
+      { value: "add", label: "累加", hint: "「累加」：这笔钱会直接计入确定资产总额。" },
+      {
+        value: "deduct",
+        label: "去重",
+        hint: "「去重」：这笔钱在别的目录里已经记过，填在这里会重复计算，所以从总额中扣掉。",
+      },
     ],
   },
   pending: {
     label: "待定资产",
+    description: "把近期确定会到账或花掉的钱记在这里，例如下个月工资、房租、奖金。",
+    emptyHint: "例如本月预计、奖金与房租。",
     directions: [
-      { value: "inflow", label: "流入" },
-      { value: "outflow", label: "流出" },
+      { value: "inflow", label: "流入", hint: "「流入」：近期预计会到账，计入预计资产。" },
+      { value: "outflow", label: "流出", hint: "「流出」：近期预计会支出，从预计资产中扣掉。" },
     ],
   },
 });
@@ -61,6 +70,88 @@ export function createAmountItem(section) {
 // 创建不参与任何计算的独立备注条目。
 export function createNoteItem() {
   return { type: "note", text: "" };
+}
+
+// 读取指定区域与方向对应的元信息，用于在界面上解释该方向的含义。
+export function getDirectionMeta(section, direction) {
+  return SECTION_META[section]?.directions.find((item) => item.value === direction) ?? null;
+}
+
+// 生成一份合成示例数据，帮助新用户直观理解目录、去重与多币种折算。
+export function createExampleState() {
+  const state = createInitialState();
+  const amount = (name, value, currency, direction, note = "") => ({
+    type: "amount",
+    name,
+    amount: value,
+    currency,
+    direction,
+    note,
+  });
+
+  state.confirmed.directories = [
+    {
+      name: "银行账户",
+      directories: [
+        {
+          name: "招商银行",
+          items: [
+            amount("活期余额", "12800.50", "CNY", "add", "日常开销账户"),
+            amount(
+              "代销基金",
+              "30000.00",
+              "CNY",
+              "deduct",
+              "这笔基金在「投资账户 · 基金」里已经记过，这里选去重避免重复计算",
+            ),
+          ],
+        },
+        {
+          name: "中国银行",
+          items: [amount("一年定期", "50000.00", "CNY", "add", "到期日 2027-03")],
+        },
+      ],
+    },
+    {
+      name: "投资账户",
+      directories: [
+        {
+          name: "基金",
+          items: [amount("沪深300指数", "30000.00", "CNY", "add", "每月定投")],
+        },
+        {
+          name: "港股",
+          items: [amount("腾讯控股", "8000.00", "HKD", "add", "用右侧统一汇率折算成人民币")],
+        },
+      ],
+    },
+    {
+      name: "线上钱包",
+      items: [
+        amount("支付宝余额", "2350.00", "CNY", "add"),
+        amount("微信零钱", "320.00", "CNY", "add"),
+        {
+          type: "note",
+          text: "同一笔钱在多个平台都能看到时，只在一处选「累加」，其余选「去重」。",
+        },
+      ],
+    },
+  ];
+
+  state.pending.directories = [
+    {
+      name: "本月预计",
+      items: [
+        amount("年终奖", "15000.00", "CNY", "inflow", "2 月发放"),
+        amount("房租", "3200.00", "CNY", "outflow", "每月 15 日扣款"),
+      ],
+    },
+  ];
+
+  state.exchangeRates = {
+    HKD: { rateToCNY: "0.92", updatedAt: formatLocalIso(new Date()), source: "manual" },
+  };
+  return state;
 }
 
 // 按索引路径读取目录；路径失效时返回 null，避免结构操作误改其他节点。

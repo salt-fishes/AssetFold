@@ -29,6 +29,10 @@
       </a>
       <div class="header-actions">
         <span id="save-status" class="save-status" role="status">— 已保存</span>
+        <button class="button button-toggle-side" type="button" data-action="toggle-side-panel" aria-controls="side-column" aria-expanded="true">
+          <svg class="toggle-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+          <span class="toggle-label">工具面板</span>
+        </button>
         <button class="button button-danger" type="button" data-action="clear-data">清空数据</button>
         <button class="button button-primary" type="button" data-action="add-root-directory">
           <span aria-hidden="true">＋</span> 新增顶级目录
@@ -41,28 +45,28 @@
         <article class="summary-card summary-confirmed">
           <p>确定资产</p>
           <strong id="summary-confirmed">¥0.00</strong>
-          <span>累加减去重</span>
+          <span>现在实际持有的钱</span>
         </article>
         <article class="summary-card summary-inflow">
           <p>待定流入</p>
           <strong id="summary-inflow">+¥0.00</strong>
-          <span>预计增加</span>
+          <span>近期预计会到账</span>
         </article>
         <article class="summary-card summary-outflow">
           <p>待定流出</p>
           <strong id="summary-outflow">−¥0.00</strong>
-          <span>预计减少</span>
+          <span>近期预计会支出</span>
         </article>
         <article class="summary-card summary-projected">
           <p>预计资产</p>
           <strong id="summary-projected">¥0.00</strong>
-          <span>确定与待定合并</span>
+          <span>确定的加上未来进出</span>
         </article>
       </section>
 
       <div id="calculation-alert" class="notice notice-error" hidden role="alert"></div>
 
-      <div class="workspace-layout">
+      <div id="workspace-layout" class="workspace-layout">
         <section class="workspace-panel" aria-labelledby="workspace-title">
           <div class="panel-heading">
             <h2 id="workspace-title">资产结构</h2>
@@ -74,7 +78,7 @@
           <div id="tree-workspace" class="tree-workspace"></div>
         </section>
 
-        <aside class="side-column">
+        <aside id="side-column" class="side-column">
           <section class="side-panel" aria-labelledby="rate-title">
             <div class="panel-heading compact">
               <h2 id="rate-title">汇率设置</h2>

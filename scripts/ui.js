@@ -3,11 +3,13 @@
 import {
   createAmountItem,
   createDirectory,
+  createExampleState,
   createInitialState,
   createNoteItem,
   decodePath,
   encodePath,
   formatLocalIso,
+  getDirectionMeta,
   getDirectory,
   getSiblingDirectories,
   listUsedCurrencies,
@@ -32,6 +34,9 @@ import { clearStoredData, replaceStoredState, saveSession, saveState } from "./s
 export function createApp({ state, session }) {
   const elements = {
     workspace: document.querySelector("#tree-workspace"),
+    layout: document.querySelector("#workspace-layout"),
+    sideColumn: document.querySelector("#side-column"),
+    sideToggle: document.querySelector('[data-action="toggle-side-panel"]'),
     alert: document.querySelector("#calculation-alert"),
     saveStatus: document.querySelector("#save-status"),
     rateList: document.querySelector("#rate-list"),
@@ -57,6 +62,7 @@ export function createApp({ state, session }) {
     renderWorkspace();
     renderRates();
     renderCalculation();
+    renderSidePanel();
     document.querySelectorAll(`input[name="conversion-mode"]`).forEach((input) => {
       input.checked = input.value === state.conversionMode;
     });
@@ -77,20 +83,47 @@ export function createApp({ state, session }) {
     const section = session.activeSection;
     const directories = state[section].directories;
     if (directories.length === 0) {
-      elements.workspace.innerHTML = `
-        <div class="empty-state">
-          <div>
-            <img class="empty-diagram" src="./assets/empty-diagram.svg" width="96" height="72" alt="">
-            <h3>${SECTION_META[section].label}尚无目录</h3>
-            <p>先创建一个顶级目录，再按需要添加子目录、金额或备注。</p>
-            <button class="button button-primary" type="button" data-action="add-root-directory">新增顶级目录</button>
-          </div>
-        </div>`;
+      elements.workspace.innerHTML = renderEmptyState(section);
       return;
     }
 
     const calculation = calculateState(state);
     elements.workspace.innerHTML = `<div class="directory-list">${directories.map((directory, index) => renderDirectory(directory, section, [index], 1, calculation)).join("")}</div>`;
+  }
+
+  // 首次使用时给出完整引导；已经录入过数据后只显示当前区域的简短说明。
+  function renderEmptyState(section) {
+    if (isAppBlank()) {
+      return `
+        <div class="empty-state">
+          <div class="onboarding">
+            <img class="empty-diagram" src="./assets/empty-diagram.svg" width="96" height="72" alt="">
+            <h3>把现在和近期的钱，放进同一张快照</h3>
+            <p class="onboarding-lead">AssetFold 把你持有的资产和近期预计的进出统一折算成人民币，数据只存在这台设备的浏览器里，不会上传。</p>
+            <ol class="onboarding-steps">
+              <li><strong>建目录</strong><span>按账户、平台或资产类型分组，最多四级</span></li>
+              <li><strong>填金额</strong><span>每条金额选一个方向：<b>累加</b>直接计入，<b>去重</b>用来扣掉在别处重复记过的钱</span></li>
+              <li><strong>看汇总</strong><span>确定资产、待定流入、待定流出、预计资产四项实时更新</span></li>
+            </ol>
+            <div class="onboarding-actions">
+              <button class="button button-primary" type="button" data-action="load-example">载入示例数据</button>
+              <button class="button" type="button" data-action="add-root-directory">从零开始</button>
+            </div>
+            <p class="onboarding-note">示例数据可以随时用「清空数据」删除，换成你自己的资产。</p>
+          </div>
+        </div>`;
+    }
+
+    const meta = SECTION_META[section];
+    return `
+      <div class="empty-state">
+        <div>
+          <h3>${meta.label}还没有内容</h3>
+          <p>${meta.description}</p>
+          <button class="button button-primary" type="button" data-action="add-root-directory">新增${meta.label}目录</button>
+          <p class="empty-hint">${meta.emptyHint}</p>
+        </div>
+      </div>`;
   }
 
   // 递归渲染单个目录，并根据同构状态提供合法的新增操作。
@@ -153,6 +186,8 @@ export function createApp({ state, session }) {
     const currency = normalizeCurrency(item.currency);
     const needsConversion = currency && currency !== "CNY" && state.conversionMode === "per-entry";
     const directionOptions = SECTION_META[section].directions.map(({ value, label }) => `<option value="${value}" ${item.direction === value ? "selected" : ""}>${label}</option>`).join("");
+    // 方向含义用一句白话说明，避免「累加 / 去重」这类术语对新用户造成障碍。
+    const directionHint = getDirectionMeta(section, item.direction)?.hint ?? "";
     const currencyOptions = SUPPORTED_CURRENCIES.map((value) => `<option value="${value}" ${currency === value ? "selected" : ""}>${value}</option>`).join("");
     const conversionField = needsConversion ? `
       <div class="item-field">
@@ -168,7 +203,7 @@ export function createApp({ state, session }) {
         </div>
         <div class="item-field">
           <label>方向</label>
-          <select class="select-input" data-action="update-item" data-section="${section}" data-path="${encodedPath}" data-index="${itemIndex}" data-field="direction">${directionOptions}</select>
+          <select class="select-input" title="${escapeAttribute(directionHint)}" data-action="update-item" data-section="${section}" data-path="${encodedPath}" data-index="${itemIndex}" data-field="direction">${directionOptions}</select>
         </div>
         <div class="item-field">
           <label>金额</label>
@@ -184,6 +219,7 @@ export function createApp({ state, session }) {
           <input class="item-input" value="${escapeAttribute(item.note ?? "")}" placeholder="可选" data-action="update-item" data-section="${section}" data-path="${encodedPath}" data-index="${itemIndex}" data-field="note">
         </div>
         ${itemToolbar(section, encodedPath, itemIndex, itemCount)}
+        <p class="item-hint">${escapeHtml(directionHint)}</p>
       </div>`;
   }
 
@@ -215,12 +251,12 @@ export function createApp({ state, session }) {
 
     if (state.conversionMode === "per-entry") {
       elements.rateList.innerHTML = `<div class="rate-empty">外币金额在各条目中直接填写人民币折算结果。</div>`;
-      updateRateHealth([]);
+      updateRateHealth([], "per-entry");
       return;
     }
     if (currencies.length === 0) {
       elements.rateList.innerHTML = `<div class="rate-empty">添加外币金额后，这里会显示对应汇率。</div>`;
-      updateRateHealth([]);
+      updateRateHealth([], "empty");
       return;
     }
 
@@ -246,13 +282,22 @@ export function createApp({ state, session }) {
           </div>
         </article>`;
     }).join("");
-    updateRateHealth(issues);
+    updateRateHealth(issues, "ok");
   }
 
-  // 更新汇率区域右上角的健康状态摘要。
-  function updateRateHealth(issues) {
-    elements.rateHealth.textContent = issues.length === 0 ? "汇率正常" : `${issues.length} 项提醒`;
-    elements.rateHealth.classList.toggle("is-warning", issues.length > 0);
+  // 更新汇率区域右上角的健康状态摘要；无外币时不谎报「正常」。
+  function updateRateHealth(issues, context) {
+    const warning = issues.length > 0;
+    const label = warning
+      ? `${issues.length} 项提醒`
+      : context === "per-entry"
+        ? "无需汇率"
+        : context === "empty"
+          ? "暂无外币"
+          : "汇率正常";
+    elements.rateHealth.textContent = label;
+    elements.rateHealth.classList.toggle("is-warning", warning);
+    elements.rateHealth.classList.toggle("is-neutral", !warning && context !== "ok");
   }
 
   // 重新计算四项汇总，并把不完整条目集中显示为可操作错误。
@@ -274,6 +319,26 @@ export function createApp({ state, session }) {
     }
   }
 
+  // 判断整个工作区是否还没有任何资产结构。
+  function isAppBlank() {
+    return state.confirmed.directories.length === 0 && state.pending.directories.length === 0;
+  }
+
+  // 侧栏展开状态：用户手动选择过就遵从用户，否则在没有任何数据时自动收起。
+  function isSidePanelOpen() {
+    if (session.sidePanelOpen === null) return !isAppBlank();
+    return session.sidePanelOpen;
+  }
+
+  // 首次使用时收起辅助面板，让「录入资产」成为唯一焦点，展开入口始终留在页头。
+  function renderSidePanel() {
+    const open = isSidePanelOpen();
+    elements.sideColumn.hidden = !open;
+    elements.layout.classList.toggle("is-side-collapsed", !open);
+    elements.sideToggle.setAttribute("aria-expanded", String(open));
+    elements.sideToggle.querySelector(".toggle-label").textContent = open ? "收起工具面板" : "展开工具面板";
+  }
+
   // 处理所有按钮点击；结构操作完成后统一立即保存并重新渲染。
   function handleClick(event) {
     const actionElement = event.target.closest("[data-action]");
@@ -291,6 +356,19 @@ export function createApp({ state, session }) {
     }
     if (action === "clear-data") {
       clearAllData();
+      return;
+    }
+    if (action === "toggle-side-panel") {
+      session.sidePanelOpen = !isSidePanelOpen();
+      saveSession(session);
+      renderSidePanel();
+      return;
+    }
+    if (action === "load-example") {
+      applyState(createExampleState());
+      saveState(state, updateSavedStatus, true);
+      renderAll();
+      showToast("已载入示例数据，可随时「清空数据」重新开始");
       return;
     }
     if (action === "add-root-directory") {
@@ -366,6 +444,12 @@ export function createApp({ state, session }) {
     if (action === "open-import") elements.importInput.click();
   }
 
+  // 用一份新状态替换内存中的工作数据，保持 state 对象引用不变。
+  function applyState(next) {
+    for (const key of Object.keys(state)) delete state[key];
+    Object.assign(state, next);
+  }
+
   // 经用户确认后清除浏览器存储，并把内存和临时界面恢复为首次打开状态。
   function clearAllData() {
     const confirmed = window.confirm("此操作将删除浏览器中保存的全部资产结构和汇率数据，且无法撤销。确定清空吗？");
@@ -377,11 +461,10 @@ export function createApp({ state, session }) {
       return;
     }
 
-    const initialState = createInitialState();
-    for (const key of Object.keys(state)) delete state[key];
-    Object.assign(state, initialState);
+    applyState(createInitialState());
     session.activeSection = "confirmed";
     session.closedPaths = [];
+    session.sidePanelOpen = null;
     elements.exportTime.value = toDateTimeLocalValue();
     elements.saveStatus.textContent = "— 已保存";
     renderAll();
@@ -478,8 +561,7 @@ export function createApp({ state, session }) {
       showToast(`无法保存导入数据：${error instanceof Error ? error.message : "浏览器存储失败"}`, true);
       return;
     }
-    for (const key of Object.keys(state)) delete state[key];
-    Object.assign(state, result.state);
+    applyState(result.state);
     // 导入文件的导出时间只更新当前页面控件，不进入 localStorage 或 sessionStorage。
     if (result.exportedAt) elements.exportTime.value = toLocalInput(result.exportedAt);
     renderAll();

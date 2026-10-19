@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { calculateState, formatCents } from "../scripts/calculation.js";
 import { createMarkdown, parseImportedJson } from "../scripts/import-export.js";
-import { createInitialState, formatLocalIso, validateState } from "../scripts/model.js";
+import { createExampleState, createInitialState, formatLocalIso, getDirectionMeta, validateState } from "../scripts/model.js";
 
 // 创建只含一个叶目录的合成状态，便于聚焦验证计算规则。
 function createConfirmedState(items) {
@@ -163,6 +163,37 @@ function createConfirmedAmount(amount, direction = "add") {
     assert.equal(result.ok, true);
     assert.equal(result.exportedAt, exportedAt);
     assert.equal(Object.hasOwn(result.state, "exportedAt"), false);
+}
+
+// 示例数据必须是一份合法资产状态，且「去重」演示后总额与逐笔累加一致。
+{
+    const state = createExampleState();
+    assert.deepEqual(validateState(state), []);
+
+    const result = calculateState(state);
+    assert.equal(result.complete, true);
+    // 活期 12800.50 + 定期 50000 + 基金 30000 + 港股 8000×0.92 + 支付宝 2350 + 微信 320
+    assert.equal(formatCents(result.displayCents.confirmed), "¥72,830.50");
+    assert.equal(formatCents(result.displayCents.inflow, { showPlus: true }), "+¥15,000.00");
+    assert.equal(formatCents(result.displayCents.outflow), "−¥3,200.00");
+    assert.equal(formatCents(result.displayCents.projected), "¥84,630.50");
+}
+
+// 每个方向都必须带有面向新手的白话解释，缺少解释视为回归。
+{
+    for (const section of ["confirmed", "pending"]) {
+        for (const direction of ["add", "deduct", "inflow", "outflow"]) {
+            const meta = getDirectionMeta(section, direction);
+            if (meta) assert.match(meta.hint, /\S/);
+        }
+    }
+    assert.equal(getDirectionMeta("confirmed", "add").label, "累加");
+    assert.equal(getDirectionMeta("confirmed", "deduct").label, "去重");
+    assert.equal(getDirectionMeta("pending", "inflow").label, "流入");
+    assert.equal(getDirectionMeta("pending", "outflow").label, "流出");
+    // 区域之间不共享方向，避免把「流入」用到确定资产上。
+    assert.equal(getDirectionMeta("confirmed", "inflow"), null);
+    assert.equal(getDirectionMeta("pending", "deduct"), null);
 }
 
 console.log("AssetFold calculation tests passed.");

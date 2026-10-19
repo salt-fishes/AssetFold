@@ -41,7 +41,7 @@ export function saveState(state, onSaved, immediate = false) {
   else saveTimer = setTimeout(commit, 180);
 }
 
-// 从 sessionStorage 恢复标签页和目录收起状态。
+// 从 sessionStorage 恢复标签页、目录收起状态和工具面板展开状态。
 export function loadSession() {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
@@ -49,9 +49,11 @@ export function loadSession() {
     return {
       activeSection: parsed.activeSection === "pending" ? "pending" : "confirmed",
       closedPaths: Array.isArray(parsed.closedPaths) ? parsed.closedPaths : [],
+      // null 表示交给界面自动决定：没有任何数据时收起工具面板。
+      sidePanelOpen: parsed.sidePanelOpen === true ? true : parsed.sidePanelOpen === false ? false : null,
     };
   } catch {
-    return { activeSection: "confirmed", closedPaths: [] };
+    return { activeSection: "confirmed", closedPaths: [], sidePanelOpen: null };
   }
 }
 
