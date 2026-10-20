@@ -30,13 +30,16 @@ import {
 import { exportJson, exportMarkdown, parseImportedJson } from "./import-export.js";
 import { clearStoredData, replaceStoredState, saveSession, saveState } from "./storage.js";
 
+// 记录窄屏滚动兜底任务的计时器，避免多次切换时相互干扰。
+let scrollFallbackTimer = null;
+
 // 创建单实例应用，集中管理 DOM 事件、渲染、持久化和文件操作。
 export function createApp({ state, session }) {
   const elements = {
     workspace: document.querySelector("#tree-workspace"),
     layout: document.querySelector("#workspace-layout"),
     sideColumn: document.querySelector("#side-column"),
-    sideToggle: document.querySelector('[data-action="toggle-side-panel"]'),
+    sideToggles: [...document.querySelectorAll('[data-action="toggle-side-panel"]')],
     alert: document.querySelector("#calculation-alert"),
     saveStatus: document.querySelector("#save-status"),
     rateList: document.querySelector("#rate-list"),
@@ -91,25 +94,29 @@ export function createApp({ state, session }) {
     elements.workspace.innerHTML = `<div class="directory-list">${directories.map((directory, index) => renderDirectory(directory, section, [index], 1, calculation)).join("")}</div>`;
   }
 
-  // 首次使用时给出完整引导；已经录入过数据后只显示当前区域的简短说明。
+  // 空白工作区提供操作说明和示例数据；已经录入数据后只显示当前区域的简短说明。
   function renderEmptyState(section) {
     if (isAppBlank()) {
+      // 两个区域的金额方向含义不同，说明文字需要按当前分类分别给出。
+      const stepDirection = section === "confirmed"
+        ? "每条金额选择方向：<b>累加</b>直接计入，<b>去重</b>扣除当前目录中已在其他目录统计的重复金额"
+        : "每条金额选择方向：<b>流入</b>是预计增加，<b>流出</b>是预计减少";
+      const heading = section === "confirmed" ? "统计当前实际持有的资产" : "统计尚未结算的资产变动";
       return `
         <div class="empty-state">
           <div class="onboarding">
-            <img class="empty-diagram" src="./assets/empty-diagram.svg" width="96" height="72" alt="">
-            <h3>把现在和近期的钱，放进同一张快照</h3>
-            <p class="onboarding-lead">AssetFold 把你持有的资产和近期预计的进出统一折算成人民币，数据只存在这台设备的浏览器里，不会上传。</p>
+            <h3>${heading}</h3>
+            <p class="onboarding-lead">AssetFold 把资产按目录组织起来，统一折算成人民币；数据只保存在当前浏览器，不会上传。</p>
             <ol class="onboarding-steps">
-              <li><strong>建目录</strong><span>按账户、平台或资产类型分组，最多四级</span></li>
-              <li><strong>填金额</strong><span>每条金额选一个方向：<b>累加</b>直接计入，<b>去重</b>用来扣掉在别处重复记过的钱</span></li>
-              <li><strong>看汇总</strong><span>确定资产、待定流入、待定流出、预计资产四项实时更新</span></li>
+              <li><strong>创建目录</strong><span>按账户、平台或资产类型分组，最多四级</span></li>
+              <li><strong>添加金额</strong><span>${stepDirection}</span></li>
+              <li><strong>查看汇总</strong><span>确定资产、待定流入、待定流出、预计资产四项实时更新</span></li>
             </ol>
             <div class="onboarding-actions">
               <button class="button button-primary" type="button" data-action="load-example">载入示例数据</button>
               <button class="button" type="button" data-action="add-root-directory">从零开始</button>
             </div>
-            <p class="onboarding-note">示例数据可以随时用「清空数据」删除，换成你自己的资产。</p>
+            <p class="onboarding-note">示例数据可以随时用“清空数据”删除，换成自己的资产。</p>
           </div>
         </div>`;
     }
@@ -186,7 +193,7 @@ export function createApp({ state, session }) {
     const currency = normalizeCurrency(item.currency);
     const needsConversion = currency && currency !== "CNY" && state.conversionMode === "per-entry";
     const directionOptions = SECTION_META[section].directions.map(({ value, label }) => `<option value="${value}" ${item.direction === value ? "selected" : ""}>${label}</option>`).join("");
-    // 方向含义用一句白话说明，避免「累加 / 去重」这类术语对新用户造成障碍。
+    // 方向含义改为按需展开的提示，避免每条金额长期占用一整行说明。
     const directionHint = getDirectionMeta(section, item.direction)?.hint ?? "";
     const currencyOptions = SUPPORTED_CURRENCIES.map((value) => `<option value="${value}" ${currency === value ? "selected" : ""}>${value}</option>`).join("");
     const conversionField = needsConversion ? `
@@ -202,8 +209,11 @@ export function createApp({ state, session }) {
           <input class="item-input" value="${escapeAttribute(item.name)}" placeholder="建议填写" data-action="update-item" data-section="${section}" data-path="${encodedPath}" data-index="${itemIndex}" data-field="name">
         </div>
         <div class="item-field">
-          <label>方向</label>
-          <select class="select-input" title="${escapeAttribute(directionHint)}" data-action="update-item" data-section="${section}" data-path="${encodedPath}" data-index="${itemIndex}" data-field="direction">${directionOptions}</select>
+          <div class="field-head">
+            <span class="field-name">方向</span>
+            <button class="hint-trigger" type="button" aria-label="${escapeAttribute(directionHint)}" data-hint="${escapeAttribute(directionHint)}">?</button>
+          </div>
+          <select class="select-input" data-action="update-item" data-section="${section}" data-path="${encodedPath}" data-index="${itemIndex}" data-field="direction">${directionOptions}</select>
         </div>
         <div class="item-field">
           <label>金额</label>
@@ -219,7 +229,6 @@ export function createApp({ state, session }) {
           <input class="item-input" value="${escapeAttribute(item.note ?? "")}" placeholder="可选" data-action="update-item" data-section="${section}" data-path="${encodedPath}" data-index="${itemIndex}" data-field="note">
         </div>
         ${itemToolbar(section, encodedPath, itemIndex, itemCount)}
-        <p class="item-hint">${escapeHtml(directionHint)}</p>
       </div>`;
   }
 
@@ -285,7 +294,7 @@ export function createApp({ state, session }) {
     updateRateHealth(issues, "ok");
   }
 
-  // 更新汇率区域右上角的健康状态摘要；无外币时不谎报「正常」。
+  // 更新汇率区域右上角的健康状态摘要；无外币时不谎报“正常”。
   function updateRateHealth(issues, context) {
     const warning = issues.length > 0;
     const label = warning
@@ -330,13 +339,32 @@ export function createApp({ state, session }) {
     return session.sidePanelOpen;
   }
 
-  // 首次使用时收起辅助面板，让「录入资产」成为唯一焦点，展开入口始终留在页头。
+  // 首次使用时收起辅助面板，让“录入资产”成为唯一焦点，展开入口始终留在页头。
   function renderSidePanel() {
     const open = isSidePanelOpen();
     elements.sideColumn.hidden = !open;
     elements.layout.classList.toggle("is-side-collapsed", !open);
-    elements.sideToggle.setAttribute("aria-expanded", String(open));
-    elements.sideToggle.querySelector(".toggle-label").textContent = open ? "收起工具面板" : "展开工具面板";
+    elements.sideToggles.forEach((toggle) => {
+      toggle.setAttribute("aria-expanded", String(open));
+      const label = toggle.querySelector(".toggle-label");
+      if (label) label.textContent = open ? "收起工具面板" : "展开工具面板";
+    });
+  }
+
+  // 窄屏下工具面板排列在资产结构下方，展开或收起时需要滚动到对应区域。
+  function scrollToPanel(target) {
+    if (window.matchMedia("(min-width: 821px)").matches) return;
+    const startY = window.scrollY;
+    const top = target.getBoundingClientRect().top + window.scrollY;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top, behavior: reduceMotion ? "auto" : "smooth" });
+    // 兜底：平滑滚动在页面不可见或被中断时可能不推进，确保最终一定到达目标位置。
+    clearTimeout(scrollFallbackTimer);
+    scrollFallbackTimer = setTimeout(() => {
+      if (window.scrollY === startY && Math.abs(target.getBoundingClientRect().top) > 2) {
+        window.scrollTo({ top, behavior: "auto" });
+      }
+    }, 700);
   }
 
   // 处理所有按钮点击；结构操作完成后统一立即保存并重新渲染。
@@ -359,16 +387,20 @@ export function createApp({ state, session }) {
       return;
     }
     if (action === "toggle-side-panel") {
-      session.sidePanelOpen = !isSidePanelOpen();
+      const open = !isSidePanelOpen();
+      session.sidePanelOpen = open;
       saveSession(session);
       renderSidePanel();
+      // 窄屏下面板位于列表下方，展开时把用户带到面板，收起时带回资产结构。
+      if (open) scrollToPanel(elements.sideColumn);
+      else scrollToPanel(elements.workspace);
       return;
     }
     if (action === "load-example") {
       applyState(createExampleState());
       saveState(state, updateSavedStatus, true);
       renderAll();
-      showToast("已载入示例数据，可随时「清空数据」重新开始");
+      showToast("已载入示例数据，可随时“清空数据”重新开始");
       return;
     }
     if (action === "add-root-directory") {

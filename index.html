@@ -45,22 +45,22 @@
         <article class="summary-card summary-confirmed">
           <p>确定资产</p>
           <strong id="summary-confirmed">¥0.00</strong>
-          <span>现在实际持有的钱</span>
+          <span>当前实际持有</span>
         </article>
         <article class="summary-card summary-inflow">
           <p>待定流入</p>
           <strong id="summary-inflow">+¥0.00</strong>
-          <span>近期预计会到账</span>
+          <span>预计增加的金额</span>
         </article>
         <article class="summary-card summary-outflow">
           <p>待定流出</p>
           <strong id="summary-outflow">−¥0.00</strong>
-          <span>近期预计会支出</span>
+          <span>预计减少的金额</span>
         </article>
         <article class="summary-card summary-projected">
           <p>预计资产</p>
           <strong id="summary-projected">¥0.00</strong>
-          <span>确定的加上未来进出</span>
+          <span>确定与待定的合计</span>
         </article>
       </section>
 
@@ -79,6 +79,10 @@
         </section>
 
         <aside id="side-column" class="side-column">
+          <div class="side-column-bar">
+            <span>工具面板</span>
+            <button class="button button-small" type="button" data-action="toggle-side-panel" aria-controls="side-column" aria-expanded="true">收起</button>
+          </div>
           <section class="side-panel" aria-labelledby="rate-title">
             <div class="panel-heading compact">
               <h2 id="rate-title">汇率设置</h2>

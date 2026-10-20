@@ -1,7 +1,7 @@
 // AssetFold 计算回归测试：使用无现实含义的合成数据覆盖定点运算和结构约束。
 
 import assert from "node:assert/strict";
-import { calculateState, formatCents } from "../scripts/calculation.js";
+import { calculateState, formatCents, getRateIssues } from "../scripts/calculation.js";
 import { createMarkdown, parseImportedJson } from "../scripts/import-export.js";
 import { createExampleState, createInitialState, formatLocalIso, getDirectionMeta, validateState } from "../scripts/model.js";
 
@@ -165,18 +165,43 @@ function createConfirmedAmount(amount, direction = "add") {
     assert.equal(Object.hasOwn(result.state, "exportedAt"), false);
 }
 
-// 示例数据必须是一份合法资产状态，且「去重」演示后总额与逐笔累加一致。
+// 示例数据必须是一份合法资产状态，去重演示后基金仍被完整计入资产。
 {
     const state = createExampleState();
     assert.deepEqual(validateState(state), []);
 
     const result = calculateState(state);
     assert.equal(result.complete, true);
-    // 活期 12800.50 + 定期 50000 + 基金 30000 + 港股 8000×0.92 + 支付宝 2350 + 微信 320
-    assert.equal(formatCents(result.displayCents.confirmed), "¥72,830.50");
+    // 招商银行 42,800.50 - 30,000 = 12,800.50；中国银行 50,000；
+    // 沪深300 30,000；港股 8000 HKD × 0.85423285 = 6,833.8628；线上钱包 2,670。
+    assert.equal(formatCents(result.displayCents.confirmed), "¥102,304.36");
     assert.equal(formatCents(result.displayCents.inflow, { showPlus: true }), "+¥15,000.00");
     assert.equal(formatCents(result.displayCents.outflow), "−¥3,200.00");
-    assert.equal(formatCents(result.displayCents.projected), "¥84,630.50");
+    assert.equal(formatCents(result.displayCents.projected), "¥114,104.36");
+}
+
+// 示例汇率必须带有真实、固定的更新时间，不能用载入时间冒充新鲜汇率。
+{
+    const state = createExampleState();
+    const rate = state.exchangeRates.HKD;
+    assert.equal(rate.rateToCNY, "0.85423285");
+    assert.equal(rate.updatedAt, "2026-10-18T08:02:31+08:00");
+    assert.equal(rate.source, "automatic");
+    // 固定时间戳意味着示例汇率会随时间变旧，这正是真实汇率应有的表现。
+    const issues = getRateIssues(state, Date.parse("2026-10-19T00:00:00+08:00"));
+    assert.equal(issues.length, 0);
+    const later = getRateIssues(state, Date.parse("2026-10-25T00:00:00+08:00"));
+    assert.equal(later.length, 1);
+    assert.equal(later[0].type, "stale");
+}
+
+// 示例中每个目录的小计都不应为负，避免让用户误解去重的语义。
+{
+    const state = createExampleState();
+    const result = calculateState(state);
+    for (const [key, total] of result.directoryTotals) {
+        assert.ok(total >= 0n, `${key} 的小计不应为负数：${total}`);
+    }
 }
 
 // 每个方向都必须带有面向新手的白话解释，缺少解释视为回归。
@@ -191,7 +216,7 @@ function createConfirmedAmount(amount, direction = "add") {
     assert.equal(getDirectionMeta("confirmed", "deduct").label, "去重");
     assert.equal(getDirectionMeta("pending", "inflow").label, "流入");
     assert.equal(getDirectionMeta("pending", "outflow").label, "流出");
-    // 区域之间不共享方向，避免把「流入」用到确定资产上。
+    // 区域之间不共享方向，避免把“流入”用到确定资产上。
     assert.equal(getDirectionMeta("confirmed", "inflow"), null);
     assert.equal(getDirectionMeta("pending", "deduct"), null);
 }

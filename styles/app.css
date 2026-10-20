@@ -219,6 +219,7 @@ h2 {
 .button-toggle-side {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   color: var(--muted);
 }
@@ -346,7 +347,6 @@ h2 {
 
 .workspace-panel {
   min-width: 0;
-  overflow: hidden;
 }
 
 .side-column {
@@ -357,6 +357,22 @@ h2 {
 /* display:grid 会覆盖 [hidden] 的默认样式，需要显式隐藏。 */
 .side-column[hidden] {
   display: none;
+}
+
+/* 窄屏下面板排列在资产结构下方，就近提供收起入口。 */
+.side-column-bar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .side-panel {
@@ -419,10 +435,6 @@ h2 {
 .empty-state > .onboarding {
   width: min(520px, 100%);
   text-align: left;
-}
-
-.onboarding .empty-diagram {
-  margin: 0 0 16px;
 }
 
 .onboarding h3 {
@@ -505,13 +517,6 @@ h2 {
   font-size: 0.74rem;
 }
 
-.empty-diagram {
-  display: block;
-  width: 96px;
-  height: 72px;
-  margin: 0 auto 18px;
-}
-
 .empty-state h3 {
   margin-bottom: 8px;
   font-family: var(--font-display);
@@ -559,8 +564,8 @@ h2 {
   content: "";
 }
 
+/* 不裁剪内容，否则方向说明浮层会被容器边界切掉。 */
 .directory-card {
-  overflow: clip;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface-strong);
@@ -717,13 +722,70 @@ h2 {
   gap: 3px;
 }
 
-/* 方向含义的整行说明，让「累加 / 去重」不再是无解释的术语。 */
-.item-hint {
-  grid-column: 1 / -1;
-  margin: 0;
+/* 方向说明改为按需展开的浮层，支持悬停、键盘聚焦与移动端点按。 */
+.field-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.field-name {
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: 0.67rem;
+  font-weight: 700;
+}
+
+.hint-trigger {
+  position: relative;
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hint-trigger:hover,
+.hint-trigger:focus-visible {
+  border-color: var(--focus);
+  color: var(--focus);
+}
+
+.hint-trigger::after {
+  position: absolute;
+  z-index: 30;
+  bottom: calc(100% + 8px);
+  left: -6px;
+  width: max-content;
+  max-width: 260px;
+  padding: 9px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  box-shadow: 0 10px 24px rgba(31, 35, 40, 0.18);
+  color: var(--ink);
+  content: attr(data-hint);
+  font-size: 0.72rem;
+  font-weight: 400;
   line-height: 1.6;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity 120ms ease;
+}
+
+.hint-trigger:hover::after,
+.hint-trigger:focus::after {
+  opacity: 1;
+  visibility: visible;
 }
 
 .item-toolbar .icon-button {
@@ -877,7 +939,7 @@ h2 {
   color: var(--pending-text);
 }
 
-/* 没有外币或不需要汇率时用中性色，避免误导成「已配置好」。 */
+/* 没有外币或不需要汇率时用中性色，避免误导成“已配置好”。 */
 .status-pill.is-neutral {
   background: var(--surface-inset);
   color: var(--muted);
@@ -1016,6 +1078,11 @@ h2 {
   .side-column {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .side-column-bar {
+    display: flex;
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 600px) {
@@ -1030,10 +1097,16 @@ h2 {
     flex-direction: row;
     justify-content: space-between;
     flex-wrap: wrap;
+    gap: 8px;
   }
 
   .header-actions .button {
     flex: 1 1 auto;
+  }
+
+  /* 工具面板开关保持自身宽度，避免换行时宽度跳变。 */
+  .header-actions .button-toggle-side {
+    flex: 0 0 auto;
   }
 
   .summary-grid {
